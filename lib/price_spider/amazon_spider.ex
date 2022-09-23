@@ -55,4 +55,44 @@ defmodule AmazonSpider do
   def build_absolute_url(url, request_url) do
     URI.merge(request_url, url) |> to_string()
   end
+
+  def get_session_cookie(username, password) do
+    action_url =
+      "https://www.linkedin.com/login?emailAddress=&fromSignIn=&fromSignIn=true&session_redirect=https%3A%2F%2Fwww.linkedin.com%2Fjobs%2Fsearch%2F%3FcurrentJobId%3D2884089192%26geoId%3D106057199%26keywords%3Delixir%26location%3DBrasil%26refresh%3Dtrue%26position%3D1%26pageNum%3D0&trk=public_jobs_nav-header-signin"
+
+    response = Crawly.fetch(action_url)
+
+    # Extract cookie from headers
+    {{"Set-Cookie", cookie}, _headers} = List.keytake(response.headers, "Set-Cookie", 0)
+
+    # Extract CSRF token from body
+    {:ok, document} = Floki.parse_document(response.body)
+
+    csrf =
+      document
+      |> Floki.find("form.login__form input[name='csrfToken']")
+      |> Floki.attribute("value")
+      |> Floki.text()
+
+    # Prepare and send the request. The given login form accepts any
+    # login/password pair
+    req_body =
+      %{
+        "username" => username,
+        "password" => password,
+        "csrfToken" => csrf
+      }
+      |> URI.encode_query()
+
+    {:ok, login_response} =
+      HTTPoison.post(action_url, req_body, %{
+        "Content-Type" => "application/x-www-form-urlencoded",
+        "Cookie" => cookie
+      })
+
+    {{"Set-Cookie", session_cookie}, _headers} =
+      List.keytake(login_response.headers, "Set-Cookie", 0)
+
+    session_cookie
+  end
 end
